@@ -33,7 +33,7 @@ r2_configured() {
     [ -n "$R2_ACCESS_KEY_ID" ] && [ -n "$R2_SECRET_ACCESS_KEY" ] && [ -n "$CF_ACCOUNT_ID" ]
 }
 
-R2_BUCKET="${R2_BUCKET_NAME:-moltbot-data}"
+R2_BUCKET="${R2_BUCKET_NAME:-keymaster-data}"
 
 setup_rclone() {
     mkdir -p "$(dirname "$RCLONE_CONF")"
@@ -110,6 +110,10 @@ if [ ! -f "$CONFIG_FILE" ]; then
             --cloudflare-ai-gateway-account-id $CF_AI_GATEWAY_ACCOUNT_ID \
             --cloudflare-ai-gateway-gateway-id $CF_AI_GATEWAY_GATEWAY_ID \
             --cloudflare-ai-gateway-api-key $CLOUDFLARE_AI_GATEWAY_API_KEY"
+    elif [ -n "$OPENROUTER_API_KEY" ]; then
+        # OpenRouter: use as OpenAI-compatible provider for initial onboard.
+        # The config patch below sets up the proper provider entry.
+        AUTH_ARGS="--auth-choice openai-api-key --openai-api-key $OPENROUTER_API_KEY"
     elif [ -n "$ANTHROPIC_API_KEY" ]; then
         AUTH_ARGS="--auth-choice apiKey --anthropic-api-key $ANTHROPIC_API_KEY"
     elif [ -n "$OPENAI_API_KEY" ]; then
@@ -217,6 +221,27 @@ if (process.env.CF_AI_GATEWAY_MODEL) {
     } else {
         console.warn('CF_AI_GATEWAY_MODEL set but missing required config (account ID, gateway ID, or API key)');
     }
+}
+
+// OpenRouter configuration (single API key for all models)
+// OpenRouter is OpenAI-compatible, so we use 'openai-completions' API type.
+// Set OPENROUTER_API_KEY and optionally OPENROUTER_MODEL (default: anthropic/claude-sonnet-4-5)
+if (process.env.OPENROUTER_API_KEY) {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    const modelId = process.env.OPENROUTER_MODEL || 'anthropic/claude-sonnet-4-5';
+
+    config.models = config.models || {};
+    config.models.providers = config.models.providers || {};
+    config.models.providers['openrouter'] = {
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiKey: apiKey,
+        api: 'openai-completions',
+        models: [{ id: modelId, name: modelId, contextWindow: 200000, maxTokens: 8192 }],
+    };
+    config.agents = config.agents || {};
+    config.agents.defaults = config.agents.defaults || {};
+    config.agents.defaults.model = { primary: 'openrouter/' + modelId };
+    console.log('OpenRouter configured: model=' + modelId);
 }
 
 // Telegram configuration
